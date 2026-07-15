@@ -79,6 +79,11 @@
 #include "version.h"
 #undef FORCE_VERSION_H_INCLUDE
 
+// [TimeTrap] added for performance interference
+FILE *exp_log_file = nullptr;
+uint64_t last_logged_sensor_time = 0;
+// -----
+
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 
 #define SCHED_TASK(func, rate_hz, max_time_micros) SCHED_TASK_CLASS(Copter, &copter, func, rate_hz, max_time_micros)
@@ -217,6 +222,13 @@ void Copter::setup()
     AP_Param::setup_sketch_defaults();
 
     init_ardupilot();
+    
+    // [TimeTrap] added for performance interference
+    exp_log_file = fopen("exp_log.csv", "w");
+    if (exp_log_file != nullptr) {
+        fprintf(exp_log_file, "TIMESTAMP_MS,EXPECTED_TIME,ACTUAL_TIME,TEMPORAL_DISPLACEMENT,REF_VEL_N,SIM_VEL_N,REF_VEL_E,SIM_VEL_E\n");
+    }
+    // -----
 
     // initialise the main loop scheduler
     scheduler.init(&scheduler_tasks[0], ARRAY_SIZE(scheduler_tasks), MASK_LOG_PM);
@@ -255,6 +267,35 @@ void Copter::fast_loop()
     // Inertial Nav
     // --------------------
     read_inertia();
+    
+    // [TimeTrap] added for performance interference
+    if (exp_log_file != nullptr && motors->armed()) { // Log only when flying
+        uint64_t current_time = AP_HAL::micros64();
+        uint64_t sensor_time = ins.get_last_update_usec(); // Time sensor actually produced
+        
+        // Calculate displacement
+        int64_t temporal_displacement = 0;
+        if (sensor_time > 0) {
+            temporal_displacement = current_time - sensor_time;
+        }
+
+        if (sensor_time != last_logged_sensor_time) { // Avoid duplicates
+            Vector3f ref_vel = pos_control->get_vel_target();
+            Vector3f sim_vel = inertial_nav.get_velocity();
+
+            // Print: Current Time, Expected Time (sensor_time), Actual Time (current_time)
+            fprintf(exp_log_file, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRId64 ",%.3f,%.3f,%.3f,%.3f\n", 
+                current_time / 1000,   // Convert to ms
+                sensor_time, 
+                current_time, 
+                temporal_displacement,
+                ref_vel.x, sim_vel.x,  // North Velocity
+                ref_vel.y, sim_vel.y); // East Velocity
+
+            last_logged_sensor_time = sensor_time;
+        }
+    }
+    // -----
 
     // check if ekf has reset target heading or position
     check_ekf_reset();
