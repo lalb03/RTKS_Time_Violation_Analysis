@@ -31,5 +31,5 @@ class x25crc(object):
         accum = self.crc
         import array
         bytes = array.array('B')
-        bytes.fromstring(buf)
+        bytes.frombytes(buf.encode("latin1"))
         self.accumulate(bytes)
