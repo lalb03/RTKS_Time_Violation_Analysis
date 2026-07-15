@@ -86,6 +86,10 @@ public:
     static bool parse_home(const char *home_str,
                            Location &loc,
                            float &yaw_degrees);
+                       
+    // [TimeTrap] add method
+    void _set_control();
+    // -----
 
 private:
     void _parse_command_line(int argc, char * const argv[]);
@@ -95,7 +99,11 @@ private:
     void _setup_fdm(void);
     void _setup_timer(void);
     void _setup_adc(void);
-
+    
+    // [TimeTrap] add method
+    void _sensor_thread();
+    // -----
+    
     void set_height_agl(void);
     void _update_rangefinder(float range_value);
     void _set_signal_handlers(void) const;

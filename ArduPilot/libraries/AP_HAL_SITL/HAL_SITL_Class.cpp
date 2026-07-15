@@ -182,6 +182,11 @@ void HAL_SITL::run(int argc, char * const argv[], Callbacks* callbacks) const
     fill_stack_nan();
 
     callbacks->setup();
+    
+    // [TimeTrap] all the setup auxiliary threads have already been created, so only the main ArduCopter control thread will have priority 60
+    _sitl_state->_set_control();
+    // -----
+    
     scheduler->system_initialized();
 
     if (getenv("SITL_WATCHDOG_RESET")) {

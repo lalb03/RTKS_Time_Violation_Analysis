@@ -19,9 +19,33 @@
 #include <SITL/SIM_JSBSim.h>
 #include <AP_HAL/utility/Socket.h>
 
+// [TimeTrap] add include
+#include <pthread.h>
+#include <sched.h>
+#include <string.h>
+#include <sys/syscall.h>
+// -----
+
 extern const AP_HAL::HAL& hal;
 
 using namespace HALSITL;
+
+// [TimeTrap] add helper to set priority
+static void set_realtime_priority(const char *name, int priority)
+{
+    sched_param param {};
+    param.sched_priority = priority;
+
+    const int ret = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+    pid_t tid = syscall(SYS_gettid); // get the TID
+
+    if (ret != 0) {
+        printf("[DEBUG TimeTrap] WARNING: Cannot set SCHED_FIFO priority %d for '%s' (TID: %d): %s\n", priority, name, tid, strerror(ret));
+    } else {
+        printf("[DEBUG TimeTrap] SUCCESS: Thread '%s' (TID: %d) set to SCHED_FIFO priority %d\n", name, tid, priority);
+    }
+}
+// -----
 
 void SITL_State::_set_param_default(const char *parm)
 {
@@ -111,6 +135,19 @@ void SITL_State::_sitl_setup(const char *home_str)
         // start with non-zero clock
         hal.scheduler->stop_clock(1);
     }
+    
+    // [TimeTrap] create sensor thread
+    const bool created = hal.scheduler->thread_create(
+        FUNCTOR_BIND_MEMBER(&SITL_State::_sensor_thread, void),
+        "sitl-sensor",
+        32 * 1024,
+        AP_HAL::Scheduler::PRIORITY_TIMER,
+        0);
+
+    if (!created) {
+        AP_HAL::panic("Cannot create SITL sensor thread");
+    }
+    // -----
 }
 
 
@@ -201,16 +238,46 @@ void SITL_State::_fdm_input_step(void)
     _scheduler->sitl_end_atomic();
 }
 
+// [TimeTrap] sensor thread
+void SITL_State::_sensor_thread(void)
+{
+#ifdef __linux__
+    pthread_setname_np(pthread_self(), "tt-sensor");
+#endif
+
+    set_realtime_priority("sensor", 80);
+    while (!Scheduler::_should_exit) {
+        // physical model advancement and sensor updating
+        _fdm_input_step();
+
+        // 1000us lock to avoid core monopolization
+        usleep(1000); 
+    }
+}
+// -----
+
+// [TimeTrap] set control thread priority
+void SITL_State::_set_control(void)
+{
+#ifdef __linux__
+    pthread_setname_np(pthread_self(), "tt-control");
+#endif
+
+    set_realtime_priority("control", 60);
+}
+// -----
 
 void SITL_State::wait_clock(uint64_t wait_time_usec)
 {
     while (AP_HAL::micros64() < wait_time_usec) {
-        if (hal.scheduler->in_main_thread() ||
-            Scheduler::from(hal.scheduler)->semaphore_wait_hack_required()) {
-            _fdm_input_step();
-        } else {
+    	// [TimeTrap] control thread now is a simple consumer
+        // if (hal.scheduler->in_main_thread() ||
+            // Scheduler::from(hal.scheduler)->semaphore_wait_hack_required()) {
+            // _fdm_input_step();
+        // } else {
             usleep(1000);
-        }
+        // }
+        // -----
     }
 }
 
