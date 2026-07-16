@@ -14,6 +14,8 @@ In experiment E2, the ArduPilot architecture is modified. The sensor acquisition
    In the MAVProxy terminal, type:
    ```bash
    wp load way.txt
-   mode auto
+   mode guided
    arm throttle
+   takeoff 10
+   mode auto
    ```
