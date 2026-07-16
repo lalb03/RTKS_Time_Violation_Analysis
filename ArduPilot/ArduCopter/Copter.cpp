@@ -80,8 +80,35 @@
 #undef FORCE_VERSION_H_INCLUDE
 
 // [TimeTrap] added for performance interference
+#include <time.h>
+#include <inttypes.h>
+#include <stdlib.h>
+
 FILE *exp_log_file = nullptr;
-uint64_t last_logged_sensor_time = 0;
+
+static uint64_t last_control_sim_us = 0;
+static uint64_t last_control_wall_us = 0;
+static uint64_t last_ins_update_us = 0;
+static uint16_t exp_log_flush_counter = 0;
+
+static uint64_t wall_time_us()
+{
+    struct timespec ts {};
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
+    return static_cast<uint64_t>(ts.tv_sec) * 1000000ULL +
+           static_cast<uint64_t>(ts.tv_nsec) / 1000ULL;
+}
+
+static void close_exp_log()
+{
+    if (exp_log_file != nullptr) {
+        fflush(exp_log_file);
+        fclose(exp_log_file);
+        exp_log_file = nullptr;
+    }
+}
+
 // -----
 
 const AP_HAL::HAL& hal = AP_HAL::get_HAL();
@@ -226,7 +253,23 @@ void Copter::setup()
     // [TimeTrap] added for performance interference
     exp_log_file = fopen("exp_log.csv", "w");
     if (exp_log_file != nullptr) {
-        fprintf(exp_log_file, "TIMESTAMP_MS,EXPECTED_TIME,ACTUAL_TIME,TEMPORAL_DISPLACEMENT,REF_VEL_N,SIM_VEL_N,REF_VEL_E,SIM_VEL_E\n");
+        fprintf(exp_log_file,
+		"SIM_TIME_US,"
+		"WALL_TIME_US,"
+		"CONTROL_DT_SIM_US,"
+		"CONTROL_DT_WALL_US,"
+		"CONTROL_OVERRUN_SIM_US,"
+                "CONTROL_OVERRUN_WALL_US,"
+		"INS_UPDATE_US,"
+		"INS_DT_US,"
+		"NAV_INDEX,"
+		"WP_DISTANCE_CM,"
+		"REF_VEL_N,"
+		"SIM_VEL_N,"
+		"REF_VEL_E,"
+		"SIM_VEL_E\n");
+
+    	atexit(close_exp_log);
     }
     // -----
 
@@ -244,6 +287,11 @@ void Copter::loop()
 // Main loop - 400hz
 void Copter::fast_loop()
 {
+    // [TimeTrap] added for performance interference
+    	const uint64_t control_sim_us = AP_HAL::micros64();
+        const uint64_t control_wall_us = wall_time_us();
+    // -----
+
     // update INS immediately to get current gyro data populated
     ins.update();
 
@@ -269,31 +317,59 @@ void Copter::fast_loop()
     read_inertia();
     
     // [TimeTrap] added for performance interference
-    if (exp_log_file != nullptr && motors->armed()) { // Log only when flying
-        uint64_t current_time = AP_HAL::micros64();
-        uint64_t sensor_time = ins.get_last_update_usec(); // Time sensor actually produced
-        
-        // Calculate displacement
-        int64_t temporal_displacement = 0;
-        if (sensor_time > 0) {
-            temporal_displacement = current_time - sensor_time;
-        }
+    if (exp_log_file != nullptr && motors->armed()) {
 
-        if (sensor_time != last_logged_sensor_time) { // Avoid duplicates
-            Vector3f ref_vel = pos_control->get_vel_target();
-            Vector3f sim_vel = inertial_nav.get_velocity();
+	const uint64_t control_dt_sim_us = last_control_sim_us == 0 ? 0 : control_sim_us - last_control_sim_us;
+	const uint64_t control_dt_wall_us = last_control_wall_us == 0 ? 0 : control_wall_us - last_control_wall_us;
+	constexpr uint64_t nominal_period_us = 2500;
+	const uint64_t control_overrun_sim_us = control_dt_sim_us > nominal_period_us ? control_dt_sim_us - nominal_period_us : 0;
+	const uint64_t control_overrun_wall_us = control_dt_wall_us > nominal_period_us ? control_dt_wall_us - nominal_period_us : 0;
+	const uint64_t ins_update_us = ins.get_last_update_usec();
+	const uint64_t ins_dt_us = last_ins_update_us == 0 ? 0 : ins_update_us - last_ins_update_us;
+	const uint16_t nav_index = mode_auto.mission.get_current_nav_index();
+	const uint32_t wp_distance_cm = flightmode->wp_distance();
+	const Vector3f ref_vel = pos_control->get_vel_target();
+	const Vector3f sim_vel = inertial_nav.get_velocity();
 
-            // Print: Current Time, Expected Time (sensor_time), Actual Time (current_time)
-            fprintf(exp_log_file, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRId64 ",%.3f,%.3f,%.3f,%.3f\n", 
-                current_time / 1000,   // Convert to ms
-                sensor_time, 
-                current_time, 
-                temporal_displacement,
-                ref_vel.x, sim_vel.x,  // North Velocity
-                ref_vel.y, sim_vel.y); // East Velocity
+	fprintf(
+	    exp_log_file,
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%u,"
+	    "%" PRIu32 ","
+	    "%.3f,%.3f,%.3f,%.3f\n",
+	    
+	    control_sim_us,
+	    control_wall_us,
+	    control_dt_sim_us,
+	    control_dt_wall_us,
+	    control_overrun_sim_us,
+            control_overrun_wall_us,
+	    ins_update_us,
+	    ins_dt_us,
+	    static_cast<unsigned>(nav_index),
+	    wp_distance_cm,
+	    ref_vel.x,
+	    sim_vel.x,
+	    ref_vel.y,
+	    sim_vel.y);
 
-            last_logged_sensor_time = sensor_time;
-        }
+	last_control_sim_us = control_sim_us;
+	last_control_wall_us = control_wall_us;
+	last_ins_update_us = ins_update_us;
+	
+	exp_log_flush_counter++;
+	
+	if (exp_log_flush_counter >= 400) {
+	    fflush(exp_log_file);
+	    exp_log_flush_counter = 0;
+	}
     }
     // -----
 
