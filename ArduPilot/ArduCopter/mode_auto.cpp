@@ -1,5 +1,11 @@
 #include "Copter.h"
 
+// [TimeTrap] define delay
+#include <unistd.h>
+#include <stdio.h>
+#define TT_DELAY 10000
+// -----
+
 #if MODE_AUTO_ENABLED == ENABLED
 
 /*
@@ -760,6 +766,23 @@ void ModeAuto::wp_run()
 
     // set motors to full range
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+    
+    // [TimeTrap] inject delay
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    static bool tt_printed = false;
+
+    // Delay injection approaching waypoint 2
+    if (mission.get_current_nav_index() == 2) {     
+    
+        if (!tt_printed) {
+            printf("[DEBUG TimeTrap] Delay injection active\n");
+            tt_printed = true;
+        }
+      
+        usleep(TT_DELAY);
+    }
+#endif
+    // -----
 
     // run waypoint controller
     copter.failsafe_terrain_set_status(wp_nav->update_wpnav());
