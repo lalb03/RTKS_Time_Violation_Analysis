@@ -19,6 +19,9 @@ The goal is to demonstrate that a global CPU overload does not cause control ins
    In the MAVProxy terminal, type:
    ```bash
    wp load way.txt
-   mode auto
+   mode guided
    arm throttle
+   takeoff 10
+   mode auto
    ```
+
