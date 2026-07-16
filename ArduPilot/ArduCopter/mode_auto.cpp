@@ -1,9 +1,8 @@
 #include "Copter.h"
 
-// [TimeTrap] define delay
+// [TimeTrap] include
+#include <fcntl.h>
 #include <unistd.h>
-#include <stdio.h>
-#define TT_DELAY 30000
 // -----
 
 #if MODE_AUTO_ENABLED == ENABLED
@@ -766,33 +765,31 @@ void ModeAuto::wp_run()
 
     // set motors to full range
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
-    
-    // [TimeTrap] inject delay
+
+    // [TimeTrap] trigger
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    static bool tt_printed = false;
-
     static uint16_t previous_nav_index = 0;
-    static uint16_t timetrap_remaining = 0;
-    
-    const uint16_t current_nav_index = mission.get_current_nav_index();
-    
-    // when the drone changes wp form 2 to 3, 
-    if (previous_nav_index == 2 && current_nav_index == 3) {
-        timetrap_remaining = 100;
-    }
-    
-    previous_nav_index = current_nav_index;
+    static bool timetrap_e4_triggered = false;
 
-    // for 100 times, insert delay
-    if (timetrap_remaining > 0) {
-    
-    	if (!tt_printed) {
-            printf("[DEBUG TimeTrap] Delay injection active\n");
-            tt_printed = true;
+    const uint16_t current_nav_index =
+        mission.get_current_nav_index();
+
+    if (!timetrap_e4_triggered &&
+        previous_nav_index == 2 &&
+        current_nav_index == 3) {
+
+        const int trigger_fd = open(
+            "/dev/shm/timetrap_e4.trigger",
+            O_WRONLY | O_CREAT | O_TRUNC,
+            0666);
+
+        if (trigger_fd >= 0) {
+            close(trigger_fd);
+            timetrap_e4_triggered = true;
         }
-        usleep(TT_DELAY);
-        timetrap_remaining--;
     }
+
+    previous_nav_index = current_nav_index;
 #endif
     // -----
 

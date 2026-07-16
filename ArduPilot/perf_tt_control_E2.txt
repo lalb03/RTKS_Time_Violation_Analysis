@@ -1,0 +1,15 @@
+# started on Thu Jul 16 14:52:38 2026
+
+
+ Performance counter stats for thread id '230505':
+
+            315,74 msec task-clock                       #    0,053 CPUs utilized             
+       569.527.582      cycles                           #    1,804 GHz                         (92,34%)
+       166.468.579      instructions                     #    0,29  insn per cycle              (79,12%)
+        34.140.404      cache-references                 #  108,129 M/sec                       (96,19%)
+        17.343.569      cache-misses                     #   50,80% of all cache refs           (95,45%)
+             4.223      context-switches                 #   13,375 K/sec                     
+                 0      cpu-migrations                   #    0,000 /sec                      
+
+       6,003161113 seconds time elapsed
+

@@ -1,0 +1,4 @@
+[TimeTrap E4] Waiting for ArduPilot trigger...
+[TimeTrap E4] Trigger received
+[TimeTrap E4] Starting L3 aggressor: FIFO/20, 8 MiB, 6 seconds
+[TimeTrap E4] Aggressor stopped
