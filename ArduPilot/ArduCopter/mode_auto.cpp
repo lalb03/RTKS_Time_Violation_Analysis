@@ -3,7 +3,7 @@
 // [TimeTrap] define delay
 #include <unistd.h>
 #include <stdio.h>
-#define TT_DELAY 10000
+#define TT_DELAY 30000
 // -----
 
 #if MODE_AUTO_ENABLED == ENABLED
@@ -771,15 +771,27 @@ void ModeAuto::wp_run()
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     static bool tt_printed = false;
 
-    // Delay injection approaching waypoint 2
-    if (mission.get_current_nav_index() == 2) {     
+    static uint16_t previous_nav_index = 0;
+    static uint16_t timetrap_remaining = 0;
     
-        if (!tt_printed) {
+    const uint16_t current_nav_index = mission.get_current_nav_index();
+    
+    // when the drone changes wp form 2 to 3, 
+    if (previous_nav_index == 2 && current_nav_index == 3) {
+        timetrap_remaining = 100;
+    }
+    
+    previous_nav_index = current_nav_index;
+
+    // for 100 times, insert delay
+    if (timetrap_remaining > 0) {
+    
+    	if (!tt_printed) {
             printf("[DEBUG TimeTrap] Delay injection active\n");
             tt_printed = true;
         }
-      
         usleep(TT_DELAY);
+        timetrap_remaining--;
     }
 #endif
     // -----
