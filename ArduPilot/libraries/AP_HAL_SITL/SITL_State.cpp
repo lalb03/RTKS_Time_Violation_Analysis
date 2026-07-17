@@ -24,11 +24,29 @@
 #include <sched.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <atomic>
+#include <stdint.h>
+#include <time.h>
 // -----
 
 extern const AP_HAL::HAL& hal;
 
 using namespace HALSITL;
+
+// [TimeTrap] 
+extern std::atomic<uint64_t> timetrap_producer_sim_us;
+extern std::atomic<uint64_t> timetrap_producer_wall_us;
+
+static uint64_t timetrap_wall_time_us()
+{
+    struct timespec ts {};
+
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
+    return static_cast<uint64_t>(ts.tv_sec) * 1000000ULL +
+           static_cast<uint64_t>(ts.tv_nsec) / 1000ULL;
+}
+// -----
 
 // [TimeTrap] add helper to set priority
 static void set_realtime_priority(const char *name, int priority)
@@ -236,6 +254,11 @@ void SITL_State::_fdm_input_step(void)
     // trigger all APM timers.
     _scheduler->timer_event();
     _scheduler->sitl_end_atomic();
+    
+    // [TimeTrap] timestamp of the latest completed update
+    timetrap_producer_sim_us.store(AP_HAL::micros64(), std::memory_order_release);
+    timetrap_producer_wall_us.store(timetrap_wall_time_us(), std::memory_order_release);
+// -----
 }
 
 // [TimeTrap] sensor thread
