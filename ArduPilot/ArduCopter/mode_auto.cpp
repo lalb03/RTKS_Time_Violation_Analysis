@@ -3,8 +3,8 @@
 // [TimeTrap] define delay
 #include <unistd.h>
 #include <stdio.h>
-#define TT_DELAY 30000
-// #define TT_DELAY 50000
+// #define TT_DELAY 30000
+#define TT_DELAY 50000
 // -----
 
 #if MODE_AUTO_ENABLED == ENABLED
