@@ -3,8 +3,8 @@
 // [TimeTrap] define delay
 #include <unistd.h>
 #include <stdio.h>
-// #define TT_DELAY 30000
-#define TT_DELAY 50000
+#define TT_DELAY 30000
+// #define TT_DELAY 50000
 // -----
 
 #if MODE_AUTO_ENABLED == ENABLED
@@ -777,14 +777,14 @@ void ModeAuto::wp_run()
     
     const uint16_t current_nav_index = mission.get_current_nav_index();
     
-    // when the drone changes wp form 2 to 3, 
+    // when the drone changes wp form 2 to 3 
     if (previous_nav_index == 2 && current_nav_index == 3) {
         timetrap_remaining = 200;
     }
     
     previous_nav_index = current_nav_index;
 
-    // for 100 times, insert delay
+    // for 200 times, insert delay
     if (timetrap_remaining > 0) {
     
     	if (!tt_printed) {
