@@ -83,6 +83,13 @@
 #include <time.h>
 #include <inttypes.h>
 #include <stdlib.h>
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#include <atomic>
+
+// these are defined here and not in SITL_State.cpp so this log can also work for E0 and E1 
+std::atomic<uint64_t> timetrap_producer_sim_us{0};
+std::atomic<uint64_t> timetrap_producer_wall_us{0};
+#endif
 
 FILE *exp_log_file = nullptr;
 
@@ -254,20 +261,29 @@ void Copter::setup()
     exp_log_file = fopen("exp_log.csv", "w");
     if (exp_log_file != nullptr) {
         fprintf(exp_log_file,
-		"SIM_TIME_US,"
-		"WALL_TIME_US,"
-		"CONTROL_DT_SIM_US,"
-		"CONTROL_DT_WALL_US,"
-		"CONTROL_OVERRUN_SIM_US,"
-                "CONTROL_OVERRUN_WALL_US,"
-		"INS_UPDATE_US,"
-		"INS_DT_US,"
-		"NAV_INDEX,"
-		"WP_DISTANCE_CM,"
-		"REF_VEL_N,"
-		"SIM_VEL_N,"
-		"REF_VEL_E,"
-		"SIM_VEL_E\n");
+            "INS_BEFORE_WPNAV_US,"
+            "INS_AFTER_WPNAV_US,"
+            "INS_UPDATED_DURING_WPNAV,"
+            "STATE_AGE_AT_WPNAV_US,"
+            "WPNAV_ELAPSED_WALL_US,"
+	    "SIM_TIME_US,"
+	    "WALL_TIME_US,"
+	    "CONTROL_DT_SIM_US,"
+	    "CONTROL_DT_WALL_US,"
+	    "CONTROL_OVERRUN_SIM_US,"
+	    "CONTROL_OVERRUN_WALL_US,"
+	    "INS_UPDATE_US,"
+	    "INS_DT_US,"
+	    "PRODUCER_SIM_US,"
+	    "PRODUCER_WALL_US,"
+	    "AGE_SIM_US,"
+	    "AGE_WALL_US,"
+	    "NAV_INDEX,"
+	    "WP_DISTANCE_CM,"
+	    "REF_VEL_N,"
+	    "SIM_VEL_N,"
+	    "REF_VEL_E,"
+	    "SIM_VEL_E\n");
 
     	atexit(close_exp_log);
     }
@@ -288,8 +304,18 @@ void Copter::loop()
 void Copter::fast_loop()
 {
     // [TimeTrap] added for performance interference
-    	const uint64_t control_sim_us = AP_HAL::micros64();
-        const uint64_t control_wall_us = wall_time_us();
+    uint64_t producer_sim_us = 0;
+    uint64_t producer_wall_us = 0;
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    producer_sim_us = timetrap_producer_sim_us.load(std::memory_order_acquire);
+    producer_wall_us = timetrap_producer_wall_us.load(std::memory_order_acquire);
+#endif
+
+    // Consumer timestamp: the control thread is about to call
+    // ins.update() and process the latest available sensor state
+    const uint64_t control_sim_us = AP_HAL::micros64();
+    const uint64_t control_wall_us = wall_time_us();
     // -----
 
     // update INS immediately to get current gyro data populated
@@ -315,6 +341,29 @@ void Copter::fast_loop()
     // Inertial Nav
     // --------------------
     read_inertia();
+
+    // check if ekf has reset target heading or position
+    check_ekf_reset();
+    
+    // [TimeTrap] log
+    const uint64_t ins_before_wpnav_us = ins.get_last_update_usec();
+    const uint64_t wall_before_wpnav_us = wall_time_us();
+    // -----
+
+    // run the attitude controllers
+    update_flight_mode();
+    
+    // [TimeTrap] log
+    const uint64_t ins_after_wpnav_us = ins.get_last_update_usec();
+    const uint64_t wall_after_wpnav_us = wall_time_us();
+    const uint64_t sim_after_wpnav_us = AP_HAL::micros64();
+    
+    const uint64_t wpnav_elapsed_wall_us = wall_after_wpnav_us - wall_before_wpnav_us;
+    
+    const uint64_t state_age_at_wpnav_us = sim_after_wpnav_us >= ins_before_wpnav_us ? sim_after_wpnav_us - ins_before_wpnav_us : 0;
+
+    const uint8_t ins_updated_during_wpnav = ins_after_wpnav_us != ins_before_wpnav_us ? 1 : 0;
+    // -----
     
     // [TimeTrap] added for performance interference
     if (exp_log_file != nullptr && motors->armed()) {
@@ -326,6 +375,8 @@ void Copter::fast_loop()
 	const uint64_t control_overrun_wall_us = control_dt_wall_us > nominal_period_us ? control_dt_wall_us - nominal_period_us : 0;
 	const uint64_t ins_update_us = ins.get_last_update_usec();
 	const uint64_t ins_dt_us = last_ins_update_us == 0 ? 0 : ins_update_us - last_ins_update_us;
+	const uint64_t age_sim_us = producer_sim_us != 0 && control_sim_us >= producer_sim_us ? control_sim_us - producer_sim_us : 0;
+	const uint64_t age_wall_us = producer_wall_us != 0 && control_wall_us >= producer_wall_us ? control_wall_us - producer_wall_us : 0;
 	const uint16_t nav_index = mode_auto.mission.get_current_nav_index();
 	const uint32_t wp_distance_cm = flightmode->wp_distance();
 	const Vector3f ref_vel = pos_control->get_vel_target();
@@ -333,6 +384,15 @@ void Copter::fast_loop()
 
 	fprintf(
 	    exp_log_file,
+	    "%" PRIu64 ","
+            "%" PRIu64 ","
+            "%u,"
+            "%" PRIu64 ","
+            "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
+	    "%" PRIu64 ","
 	    "%" PRIu64 ","
 	    "%" PRIu64 ","
 	    "%" PRIu64 ","
@@ -344,15 +404,27 @@ void Copter::fast_loop()
 	    "%u,"
 	    "%" PRIu32 ","
 	    "%.3f,%.3f,%.3f,%.3f\n",
+
+	    ins_before_wpnav_us,
+	    ins_after_wpnav_us,
+	    static_cast<unsigned>(ins_updated_during_wpnav),
+	    state_age_at_wpnav_us,
+	    wpnav_elapsed_wall_us,
 	    
 	    control_sim_us,
 	    control_wall_us,
 	    control_dt_sim_us,
 	    control_dt_wall_us,
 	    control_overrun_sim_us,
-            control_overrun_wall_us,
+	    control_overrun_wall_us,
 	    ins_update_us,
 	    ins_dt_us,
+
+	    producer_sim_us,
+	    producer_wall_us,
+	    age_sim_us,
+	    age_wall_us,
+
 	    static_cast<unsigned>(nav_index),
 	    wp_distance_cm,
 	    ref_vel.x,
@@ -372,12 +444,6 @@ void Copter::fast_loop()
 	}
     }
     // -----
-
-    // check if ekf has reset target heading or position
-    check_ekf_reset();
-
-    // run the attitude controllers
-    update_flight_mode();
 
     // update home from EKF if necessary
     update_home_from_EKF();
