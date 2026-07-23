@@ -123,3 +123,6 @@ segv_*out
 /ArduPlane/scripts/
 /ArduSub/scripts/
 persistent.dat
+
+# Locally generated experiment output
+/exp_log.csv
