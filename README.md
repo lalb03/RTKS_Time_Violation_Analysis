@@ -6,6 +6,14 @@ It is based on ArduPilot Copter-4.0 and includes the common logging instrumentat
 
 This branch does not represent a specific experimental condition. Each experiment is maintained in a dedicated Git branch containing its own code modifications and a customized `README.md` with the corresponding execution instructions.
 
+The branch also contains the results collected from the final experimental runs. These files are stored in:
+```text
+ArduPilot_experiments_results/
+```
+The experimental results are organized by configuration and run so that the outputs of the different branches can be inspected and compared from a single location.
+
+This branch does not represent a specific experimental condition. Each experiment is maintained in a dedicated Git branch containing its own code modifications and a customized README.md with the corresponding execution instructions.
+
 ## Experiment branches
 
 * **exp/E0-baseline**: Original SITL architecture with logging instrumentation and no interference. This branch represents the original instrumented baseline.
@@ -20,7 +28,7 @@ This branch does not represent a specific experimental condition. Each experimen
 
 ## Common logging instrumentation
 
-The common logger is implemented in `ArduCopter/Copter.cpp`.
+The common logger is implemented in `ArduPilot/ArduCopter/Copter.cpp`.
 
 At the beginning of the simulation, the logger creates the file:
 
@@ -66,7 +74,7 @@ ArduPilot also produces its native `.BIN` flight logs.
 
 ## Repository structure
 
-The `main-baseline` branch contains only the common code and documentation shared by the experiments.
+The `ardupilot/main-baseline` branch contains only the common code and documentation shared by the experiments.
 
-Experiment-specific changes must remain in their corresponding branches. Changes introduced only for one experiment should not be committed to `main-baseline`.
+Experiment-specific changes must remain in their corresponding branches. Changes introduced only for one experiment should not be committed to `ardupilot/main-baseline`.
 
