@@ -6,7 +6,7 @@ The goal is to collect the baseline telemetry and performance data in ideal cond
 ## How to run the experiment
 
 1. **Start the Simulator:**
-   Open a terminal in the `ardupilot` root directory and run:
+   Open a terminal in the `ArduPilot` root directory and run:
    ```bash
    ./Tools/autotest/sim_vehicle.py -v ArduCopter --console --map
    ```
