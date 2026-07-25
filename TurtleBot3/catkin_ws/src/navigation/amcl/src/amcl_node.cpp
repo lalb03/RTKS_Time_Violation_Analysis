@@ -1613,8 +1613,7 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
 
         csv_file.close();
       }
-
-      posepub.publish(p);
+      
       pose_pub_.publish(p);
       last_published_pose = p;
 
