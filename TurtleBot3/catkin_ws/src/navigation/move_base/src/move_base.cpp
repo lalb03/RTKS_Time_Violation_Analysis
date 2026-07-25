@@ -38,6 +38,13 @@
 #include <move_base/move_base.h>
 #include <move_base_msgs/RecoveryStatus.h>
 #include <cmath>
+#include <unistd.h>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <string>
+#include <sstream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/thread.hpp>
@@ -907,42 +914,214 @@ namespace move_base {
         }
 
         {
-         boost::unique_lock<costmap_2d::Costmap2D::mutex_t> lock(*(controller_costmap_ros_->getCostmap()->getMutex()));
+          // ============================================================
+          // Configuration
+          // ============================================================
 
-        if(tc_->computeVelocityCommands(cmd_vel)){
-          ROS_DEBUG_NAMED( "move_base", "Got a valid command from the local planner: %.3lf, %.3lf, %.3lf",
-                           cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z );
-          last_valid_control_ = ros::Time::now();
-          //make sure that we send the velocity command to the base
-          vel_pub_.publish(cmd_vel);
-          if(recovery_trigger_ == CONTROLLING_R)
-            recovery_index_ = 0;
-        }
-        else {
-          ROS_DEBUG_NAMED("move_base", "The local planner could not find a valid plan.");
-          ros::Time attempt_end = last_valid_control_ + ros::Duration(controller_patience_);
+          const int requested_delay_us = 100000;  // 100 ms
 
-          //check if we've tried to find a valid control for longer than our time limit
-          if(ros::Time::now() > attempt_end){
-            //we'll move into our obstacle clearing mode
-            publishZeroVelocity();
-            state_ = CLEARING;
-            recovery_trigger_ = CONTROLLING_R;
+          const ros::Time cycle_start_time = ros::Time::now();
+
+          long measured_delay_us = 0;
+          long delay_error_us = 0;
+          long planner_computation_us = 0;
+
+          ros::Time planner_call_time;
+          ros::Time command_ready_time;
+          ros::Time command_publish_time;
+
+          bool valid_cmd = false;
+
+          // ============================================================
+          // Freeze local costmap, inject delay and compute command
+          // ============================================================
+
+          {
+            boost::unique_lock<costmap_2d::Costmap2D::mutex_t> costmap_lock(
+                *(controller_costmap_ros_->getCostmap()->getMutex()));
+
+            const auto delay_start =
+                std::chrono::steady_clock::now();
+
+            usleep(requested_delay_us);
+
+            const auto delay_end =
+                std::chrono::steady_clock::now();
+
+            measured_delay_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    delay_end - delay_start).count();
+
+            delay_error_us =
+                measured_delay_us - requested_delay_us;
+
+            planner_call_time = ros::Time::now();
+
+            const auto planner_start =
+                std::chrono::steady_clock::now();
+
+            valid_cmd =
+                tc_->computeVelocityCommands(cmd_vel);
+
+            const auto planner_end =
+                std::chrono::steady_clock::now();
+
+            planner_computation_us =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    planner_end - planner_start).count();
+
+            command_ready_time = ros::Time::now();
+
+            // Il mutex viene rilasciato automaticamente qui.
+            // La costmap può ricominciare ad aggiornarsi.
           }
-          else{
-            //otherwise, if we can't find a valid control, we'll go back to planning
-            last_valid_plan_ = ros::Time::now();
-            planning_retries_ = 0;
-            state_ = PLANNING;
-            publishZeroVelocity();
 
-            //enable the planner thread in case it isn't running on a clock
-            boost::unique_lock<boost::recursive_mutex> lock(planner_mutex_);
-            runPlanner_ = true;
-            planner_cond_.notify_one();
-            lock.unlock();
+          // ============================================================
+          // Publish or handle planner failure
+          // ============================================================
+
+          if(valid_cmd)
+          {
+            ROS_DEBUG_NAMED(
+                "move_base",
+                "Got a valid command from the local planner: %.3lf, %.3lf, %.3lf",
+                cmd_vel.linear.x,
+                cmd_vel.linear.y,
+                cmd_vel.angular.z);
+
+            last_valid_control_ = ros::Time::now();
+
+            command_publish_time = ros::Time::now();
+            vel_pub_.publish(cmd_vel);
+
+            if(recovery_trigger_ == CONTROLLING_R)
+              recovery_index_ = 0;
           }
-        }
+          else
+          {
+            command_publish_time = ros::Time::now();
+
+            ROS_DEBUG_NAMED(
+                "move_base",
+                "The local planner could not find a valid plan.");
+
+            ros::Time attempt_end =
+                last_valid_control_ +
+                ros::Duration(controller_patience_);
+
+            if(ros::Time::now() > attempt_end)
+            {
+              publishZeroVelocity();
+
+              state_ = CLEARING;
+              recovery_trigger_ = CONTROLLING_R;
+            }
+            else
+            {
+              last_valid_plan_ = ros::Time::now();
+              planning_retries_ = 0;
+              state_ = PLANNING;
+
+              publishZeroVelocity();
+
+              boost::unique_lock<boost::recursive_mutex> planner_lock(
+                  planner_mutex_);
+
+              runPlanner_ = true;
+              planner_cond_.notify_one();
+
+              planner_lock.unlock();
+            }
+          }
+
+          // ============================================================
+          // Metrics
+          // ============================================================
+
+          const double scheduling_displacement_ms =
+              (planner_call_time - cycle_start_time).toSec() *
+              1000.0;
+
+          const double command_ready_latency_ms =
+              (command_ready_time - cycle_start_time).toSec() *
+              1000.0;
+
+          const double command_publish_latency_ms =
+              (command_publish_time - cycle_start_time).toSec() *
+              1000.0;
+
+          // ============================================================
+          // CSV logging, performed after mutex release and publication
+          // ============================================================
+
+          const char* home = std::getenv("HOME");
+
+          const std::string csv_path =
+              home != nullptr
+                  ? std::string(home) +
+                        "/move_base_compute_delay_log.csv"
+                  : "/tmp/move_base_compute_delay_log.csv";
+
+          bool write_header = false;
+
+          {
+            std::ifstream existing_file(csv_path.c_str());
+
+            write_header =
+                !existing_file.good() ||
+                existing_file.peek() ==
+                    std::ifstream::traits_type::eof();
+          }
+
+          std::ofstream csv_file(
+              csv_path.c_str(),
+              std::ios::out | std::ios::app);
+
+          if(csv_file.is_open())
+          {
+            if(write_header)
+            {
+              csv_file
+                  << "cycle_start_time_sec,"
+                  << "planner_call_time_sec,"
+                  << "command_ready_time_sec,"
+                  << "command_publish_time_sec,"
+                  << "hook,"
+                  << "requested_delay_us,"
+                  << "measured_delay_us,"
+                  << "delay_error_us,"
+                  << "scheduling_displacement_ms,"
+                  << "planner_computation_us,"
+                  << "command_ready_latency_ms,"
+                  << "command_publish_latency_ms,"
+                  << "valid_command,"
+                  << "cmd_linear_x,"
+                  << "cmd_linear_y,"
+                  << "cmd_angular_z"
+                  << "\n";
+            }
+
+            csv_file
+                << std::fixed
+                << std::setprecision(9)
+                << cycle_start_time.toSec() << ","
+                << planner_call_time.toSec() << ","
+                << command_ready_time.toSec() << ","
+                << command_publish_time.toSec() << ","
+                << "inside_local_costmap_mutex" << ","
+                << requested_delay_us << ","
+                << measured_delay_us << ","
+                << delay_error_us << ","
+                << scheduling_displacement_ms << ","
+                << planner_computation_us << ","
+                << command_ready_latency_ms << ","
+                << command_publish_latency_ms << ","
+                << (valid_cmd ? 1 : 0) << ","
+                << cmd_vel.linear.x << ","
+                << cmd_vel.linear.y << ","
+                << cmd_vel.angular.z
+                << "\n";
+          }
         }
 
         break;
