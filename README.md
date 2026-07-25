@@ -6,7 +6,7 @@ The experiment is activated when the current mission navigation index changes fr
 ## How to run the experiment
 
 1. **Start the Simulator (as root):**
-   Open a terminal in the `ardupilot` root directory and run:
+   Open a terminal in the `ArduPilot` root directory and run:
    ```bash
    sudo ./Tools/autotest/sim_vehicle.py -v ArduCopter --console --map
    ```
