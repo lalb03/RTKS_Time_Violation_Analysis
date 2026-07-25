@@ -31,7 +31,7 @@ Cache aggressor:   SCHED_FIFO 20
 
 ## How to run the experiment
 1. **Start the External Aggressor:**
-   Open a terminal in the ardupilot root directory and run:
+   Open a terminal in the `ArduPilot` root directory and run:
 ```bash
 sudo ./tt_aggressor.sh | tee e4_aggressor_output.txt
 ```
