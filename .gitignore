@@ -1,0 +1,7 @@
+# TurtleBot3 ROS/catkin generated files
+/TurtleBot3/catkin_ws/build/
+/TurtleBot3/catkin_ws/devel/
+/TurtleBot3/catkin_ws/install/
+/TurtleBot3/catkin_ws/logs/
+/TurtleBot3/catkin_ws/.catkin_tools/
+/TurtleBot3/catkin_ws/src/**/__pycache__/
