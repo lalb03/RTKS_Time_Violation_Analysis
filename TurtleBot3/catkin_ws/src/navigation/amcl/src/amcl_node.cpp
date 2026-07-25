@@ -26,6 +26,13 @@
 #include <cmath>
 #include <memory>
 
+#include <unistd.h>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <string>
+
 #include <boost/bind.hpp>
 #include <boost/thread/mutex.hpp>
 
@@ -75,6 +82,9 @@
 
 // For monitoring the estimator
 #include <diagnostic_updater/diagnostic_updater.h>
+
+#include <unistd.h>
+
 
 #define NEW_UNIFORM_SAMPLING 1
 
@@ -1130,6 +1140,104 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
 {
   std::string laser_scan_frame_id = stripSlash(laser_scan->header.frame_id);
   last_laser_received_ts_ = ros::Time::now();
+
+  // auto delayBeforeTfSend =
+  //   [&](const ros::Time& scan_stamp,
+  //       const ros::Time& tf_stamp,
+  //       const char* hook_name)
+  // {
+  //   const int requested_delay_us = 20000; //  
+
+  //   const auto delay_start =
+  //       std::chrono::steady_clock::now();
+
+  //   usleep(requested_delay_us);
+
+  //   const auto delay_end =
+  //       std::chrono::steady_clock::now();
+
+  //   const long measured_delay_us =
+  //       std::chrono::duration_cast<std::chrono::microseconds>(
+  //           delay_end - delay_start).count();
+
+  //   // Real time at which sendTransform is about to be called
+  //   const ros::Time tf_send_time = ros::Time::now();
+
+  //   const double tf_send_time_sec =
+  //       tf_send_time.toSec();
+
+  //   const double scan_time_sec =
+  //       scan_stamp.toSec();
+
+  //   const double tf_stamp_sec =
+  //       tf_stamp.toSec();
+
+  //   // Age of the laser scan when the TF is actually transmitted
+  //   const double temporal_displacement_ms =
+  //       (tf_send_time - scan_stamp).toSec() * 1000.0;
+
+  //   // Difference between real transmission time and timestamp
+  //   // declared inside the TF message
+  //   const double tf_stamp_lag_ms =
+  //       (tf_send_time - tf_stamp).toSec() * 1000.0;
+
+  //   const char* home = std::getenv("HOME");
+
+  //   const std::string csv_path =
+  //       home != nullptr
+  //           ? std::string(home) + "/amcl_tf_delay_log.csv"
+  //           : "/tmp/amcl_tf_delay_log.csv";
+
+  //   bool write_header = false;
+
+  //   {
+  //     std::ifstream existing_file(csv_path.c_str());
+
+  //     write_header =
+  //         !existing_file.good() ||
+  //         existing_file.peek() ==
+  //             std::ifstream::traits_type::eof();
+  //   }
+
+  //   std::ofstream csv_file(
+  //       csv_path.c_str(),
+  //       std::ios::out | std::ios::app);
+
+  //   if (csv_file.is_open())
+  //   {
+  //     if (write_header)
+  //     {
+  //       csv_file
+  //           << "tf_send_time_sec,"
+  //           << "scan_time_sec,"
+  //           << "tf_stamp_sec,"
+  //           << "hook,"
+  //           << "temporal_displacement_ms,"
+  //           << "tf_stamp_lag_ms,"
+  //           << "requested_delay_us,"
+  //           << "measured_delay_us,"
+  //           << "delay_error_us"
+  //           << "\n";
+  //     }
+
+  //     csv_file
+  //         << std::fixed
+  //         << std::setprecision(9)
+  //         << tf_send_time_sec << ","
+  //         << scan_time_sec << ","
+  //         << tf_stamp_sec << ","
+  //         << hook_name << ","
+  //         << temporal_displacement_ms << ","
+  //         << tf_stamp_lag_ms << ","
+  //         << requested_delay_us << ","
+  //         << measured_delay_us << ","
+  //         << measured_delay_us - requested_delay_us
+  //         << "\n";
+
+  //     csv_file.close();
+  //   }
+  // };
+
   if( map_ == NULL ) {
     return;
   }
@@ -1444,6 +1552,69 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
          }
        */
 
+
+       const int requested_delay_us = 50000; // 50 ms
+
+      auto delay_start = std::chrono::steady_clock::now();
+
+      usleep(requested_delay_us);
+
+      auto delay_end = std::chrono::steady_clock::now();
+
+      double publish_time_sec = ros::Time::now().toSec();
+      double scan_time_sec = laser_scan->header.stamp.toSec();
+
+      double temporal_displacement_ms =
+          (publish_time_sec - scan_time_sec) * 1000.0;
+
+      long measured_delay_us =
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              delay_end - delay_start).count();
+
+      const char* home = std::getenv("HOME");
+
+      std::string csv_path =
+          home != nullptr
+              ? std::string(home) + "/amcl_delay_log.csv"
+              : "/tmp/amcl_delay_log.csv";
+
+      std::ofstream csv_file(
+          csv_path.c_str(),
+          std::ios::out | std::ios::app);
+
+      if (csv_file.is_open())
+      {
+        csv_file.seekp(0, std::ios::end);
+
+        if (csv_file.tellp() == 0)
+        {
+          csv_file
+            << std::fixed
+            << std::setprecision(9)
+            << publish_time_sec << ","
+            << scan_time_sec << ","
+            << temporal_displacement_ms << ","
+            << requested_delay_us << ","
+            << measured_delay_us << ","
+            << measured_delay_us - requested_delay_us
+            << "\n";
+        }
+
+        csv_file
+            << std::fixed
+            << std::setprecision(9)
+            << ros::Time::now().toSec() << ","
+            << laser_scan->header.stamp.toSec() << ","
+            << "amcl_pose_publish" << ","
+            << requested_delay_us << ","
+            << measured_delay_us << ","
+            << measured_delay_us - requested_delay_us
+            << "\n";
+
+        csv_file.close();
+      }
+
+      posepub.publish(p);
       pose_pub_.publish(p);
       last_published_pose = p;
 
@@ -1489,6 +1660,13 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
         tmp_tf_stamped.header.stamp = transform_expiration;
         tmp_tf_stamped.child_frame_id = odom_frame_id_;
         tf2::convert(latest_tf_.inverse(), tmp_tf_stamped.transform);
+        
+        // Artificial delay immediately before sending
+        // the newly calculated map -> odom transform
+        // delayBeforeTfSend(
+        //     laser_scan->header.stamp,
+        //     tmp_tf_stamped.header.stamp,
+        //     "map_odom_tf_new_pose");
 
         this->tfb_->sendTransform(tmp_tf_stamped);
         sent_first_transform_ = true;
@@ -1512,6 +1690,14 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
       tmp_tf_stamped.header.stamp = transform_expiration;
       tmp_tf_stamped.child_frame_id = odom_frame_id_;
       tf2::convert(latest_tf_.inverse(), tmp_tf_stamped.transform);
+
+      // Artificial delay before republishing
+      // the previously calculated map -> odom transform
+      // delayBeforeTfSend(
+      //     laser_scan->header.stamp,
+      //     tmp_tf_stamped.header.stamp,
+      //     "map_odom_tf_republish");
+
       this->tfb_->sendTransform(tmp_tf_stamped);
     }
 
