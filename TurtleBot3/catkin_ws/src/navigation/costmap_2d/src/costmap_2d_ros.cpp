@@ -45,6 +45,15 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+//Timetrap stuff
+#include <chrono>
+#include <cstdlib>
+#include <fstream>
+#include <iomanip>
+#include <string>
+#include <unistd.h>
+//Timetrap stuff end
+
 using namespace std;
 
 namespace costmap_2d
@@ -413,6 +422,22 @@ void Costmap2DROS::mapUpdateLoop(double frequency)
 {
   ros::NodeHandle nh;
   ros::Rate r(frequency);
+  //Local costmap update delay
+  const bool e3_target_local_costmap =
+      (name_ == "local_costmap");
+
+  const double nominal_update_period_ms =
+      1000.0 / frequency;
+
+  //Change delay-value
+  const int requested_delay_us = 200;
+
+  unsigned long event_index = 0;
+
+  bool previous_completion_valid = false;
+
+  std::chrono::steady_clock::time_point
+      previous_completion_time;
   while (nh.ok() && !map_update_thread_shutdown_)
   {
     #ifdef HAVE_SYS_TIME_H
@@ -421,7 +446,161 @@ void Costmap2DROS::mapUpdateLoop(double frequency)
     gettimeofday(&start, NULL);
     #endif
     
-    updateMap();
+    //DELAY BEFORE COSTMAP UPDATE
+    const double ros_before_sleep_sec =
+        ros::Time::now().toSec();
+
+    const std::chrono::steady_clock::time_point
+        delay_start =
+            std::chrono::steady_clock::now();
+
+    if (e3_target_local_costmap &&
+        requested_delay_us > 0)
+    {
+      usleep(requested_delay_us);
+    }
+
+    const std::chrono::steady_clock::time_point
+        delay_end =
+            std::chrono::steady_clock::now();
+
+    const double ros_update_start_sec =
+        ros::Time::now().toSec();
+
+    const long measured_delay_us =
+        std::chrono::duration_cast<
+            std::chrono::microseconds>(
+                delay_end - delay_start).count();
+
+    const long delay_error_us =
+        measured_delay_us - requested_delay_us;
+
+    const double ros_elapsed_during_sleep_ms =
+        (ros_update_start_sec -
+         ros_before_sleep_sec) * 1000.0;
+
+    const std::chrono::steady_clock::time_point
+        update_start =
+            std::chrono::steady_clock::now();
+
+    double previous_update_age_before_refresh_ms =
+        -1.0;
+
+    if (e3_target_local_costmap &&
+        previous_completion_valid)
+    {
+      previous_update_age_before_refresh_ms =
+          std::chrono::duration_cast<
+              std::chrono::duration<double, std::milli>>(
+                  update_start -
+                  previous_completion_time).count();
+    }
+    
+    updateMap(); //Central point
+    
+    const std::chrono::steady_clock::time_point
+        update_end =
+            std::chrono::steady_clock::now();
+
+    const double ros_update_complete_sec =
+        ros::Time::now().toSec();
+
+    if (e3_target_local_costmap)
+    {
+      const double update_duration_ms =
+          std::chrono::duration_cast<
+              std::chrono::duration<double, std::milli>>(
+                  update_end -
+                  update_start).count();
+
+      double update_completion_interval_ms =
+          -1.0;
+
+      double update_temporal_displacement_ms =
+          -1.0;
+
+      if (previous_completion_valid)
+      {
+        update_completion_interval_ms =
+            std::chrono::duration_cast<
+                std::chrono::duration<double, std::milli>>(
+                    update_end -
+                    previous_completion_time).count();
+
+        update_temporal_displacement_ms =
+            update_completion_interval_ms -
+            nominal_update_period_ms;
+      }
+
+      const char* home = std::getenv("HOME");
+
+      const std::string csv_path =
+          home != nullptr
+              ? std::string(home) +
+                    "/local_costmap_delay_log.csv"
+              : std::string(
+                    "/tmp/local_costmap_delay_log.csv");
+
+      std::ofstream csv_file(
+          csv_path.c_str(),
+          std::ios::out | std::ios::app);
+
+      if (csv_file.is_open())
+      {
+        csv_file.seekp(0, std::ios::end);
+
+        if (csv_file.tellp() == 0)
+        {
+          csv_file
+              << "event_index,"
+              << "costmap_name,"
+              << "ros_before_sleep_sec,"
+              << "ros_update_start_sec,"
+              << "ros_update_complete_sec,"
+              << "ros_elapsed_during_sleep_ms,"
+              << "nominal_update_period_ms,"
+              << "previous_update_age_before_refresh_ms,"
+              << "update_duration_ms,"
+              << "update_completion_interval_ms,"
+              << "update_temporal_displacement_ms,"
+              << "requested_delay_us,"
+              << "measured_delay_us,"
+              << "delay_error_us\n";
+        }
+
+        csv_file
+            << std::fixed
+            << std::setprecision(9)
+            << event_index << ","
+            << name_ << ","
+            << ros_before_sleep_sec << ","
+            << ros_update_start_sec << ","
+            << ros_update_complete_sec << ","
+            << ros_elapsed_during_sleep_ms << ","
+            << nominal_update_period_ms << ","
+            << previous_update_age_before_refresh_ms
+            << ","
+            << update_duration_ms << ","
+            << update_completion_interval_ms << ","
+            << update_temporal_displacement_ms << ","
+            << requested_delay_us << ","
+            << measured_delay_us << ","
+            << delay_error_us
+            << "\n";
+
+        csv_file.close();
+      }
+      else
+      {
+        ROS_WARN_THROTTLE(
+            5.0,
+            "E3: could not open local-costmap CSV");
+      }
+
+      previous_completion_time = update_end;
+      previous_completion_valid = true;
+      ++event_index;
+    }
 
     #ifdef HAVE_SYS_TIME_H
     gettimeofday(&end, NULL);
