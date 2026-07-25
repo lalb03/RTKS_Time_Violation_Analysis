@@ -263,6 +263,133 @@ namespace dwa_local_planner {
 
   bool DWAPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel) {
     // dispatches to either dwa sampling control or stop and rotate control, depending on whether we have been close enough to goal
+    
+    //START TIMETRAP: DWA controller delay injection
+    
+	static unsigned long event_index = 0;
+
+	static bool previous_entry_valid = false;
+
+	static std::chrono::steady_clock::time_point
+	previous_entry_time;
+
+	const double nominal_cycle_ms = 100.0;
+
+	// delay-value
+	const int requested_delay_us = 200;
+
+	const std::chrono::steady_clock::time_point
+	current_entry_time =
+	  std::chrono::steady_clock::now();
+
+	double cycle_interval_ms = -1.0;
+	double cycle_displacement_ms = -1.0;
+
+	if (previous_entry_valid)
+	{
+	cycle_interval_ms =
+	std::chrono::duration_cast<
+	    std::chrono::duration<double, std::milli>>(
+		current_entry_time -
+		previous_entry_time).count();
+
+	cycle_displacement_ms =
+	cycle_interval_ms - nominal_cycle_ms;
+	}
+
+	previous_entry_time = current_entry_time;
+	previous_entry_valid = true;
+
+	const double ros_before_sleep_sec =
+	ros::Time::now().toSec();
+
+	const std::chrono::steady_clock::time_point
+	delay_start =
+	  std::chrono::steady_clock::now();
+
+	if (requested_delay_us > 0)
+	{
+	usleep(requested_delay_us);
+	}
+
+	const std::chrono::steady_clock::time_point
+	delay_end =
+	  std::chrono::steady_clock::now();
+
+	const double ros_after_sleep_sec =
+	ros::Time::now().toSec();
+
+	const long measured_delay_us =
+	std::chrono::duration_cast<
+	  std::chrono::microseconds>(
+	      delay_end - delay_start).count();
+
+	const long delay_error_us =
+	measured_delay_us - requested_delay_us;
+
+	const double ros_elapsed_during_sleep_ms =
+	(ros_after_sleep_sec - ros_before_sleep_sec)
+	* 1000.0;
+
+	const char* home = std::getenv("HOME");
+
+	const std::string csv_path =
+	home != nullptr
+	  ? std::string(home) + "/dwa_delay_log.csv"
+	  : std::string("/tmp/dwa_delay_log.csv");
+
+	std::ofstream csv_file(
+	csv_path.c_str(),
+	std::ios::out | std::ios::app);
+
+	if (csv_file.is_open())
+	{
+	csv_file.seekp(0, std::ios::end);
+
+	if (csv_file.tellp() == 0)
+	{
+	csv_file
+	  << "event_index,"
+	  << "ros_before_sleep_sec,"
+	  << "ros_after_sleep_sec,"
+	  << "ros_elapsed_during_sleep_ms,"
+	  << "nominal_cycle_ms,"
+	  << "cycle_interval_ms,"
+	  << "cycle_displacement_ms,"
+	  << "requested_delay_us,"
+	  << "measured_delay_us,"
+	  << "delay_error_us\n";
+	}
+
+	csv_file
+	<< std::fixed
+	<< std::setprecision(9)
+	<< event_index << ","
+	<< ros_before_sleep_sec << ","
+	<< ros_after_sleep_sec << ","
+	<< ros_elapsed_during_sleep_ms << ","
+	<< nominal_cycle_ms << ","
+	<< cycle_interval_ms << ","
+	<< cycle_displacement_ms << ","
+	<< requested_delay_us << ","
+	<< measured_delay_us << ","
+	<< delay_error_us
+	<< "\n";
+
+	csv_file.close();
+	}
+	else
+	{
+	ROS_WARN_THROTTLE(
+	5.0,
+	"E2: could not open DWA timing CSV");
+	}
+
+	++event_index;
+
+
+    //END TIMETRAP
+    
     if ( ! costmap_ros_->getRobotPose(current_pose_)) {
       ROS_ERROR("Could not get robot pose");
       return false;
@@ -310,6 +437,5 @@ namespace dwa_local_planner {
       return isOk;
     }
   }
-
 
 };
