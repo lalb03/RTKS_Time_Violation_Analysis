@@ -6,7 +6,7 @@ In experiment E2, the ArduPilot architecture is modified. The sensor acquisition
 ## How to run the experiment
 
 1. **Start the Simulator:**
-   Open a terminal in the `ardupilot` root directory and run:
+   Open a terminal in the `ArduPilot` root directory and run:
    ```bash
    sudo ./Tools/autotest/sim_vehicle.py -v ArduCopter --console --map
    ```
