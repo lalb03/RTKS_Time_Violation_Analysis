@@ -114,11 +114,8 @@ export TURTLEBOT3_MODEL=burger
 Launch the TurtleBot3 navigation configuration using the map adopted for the project:
 
 ```bash
-roslaunch turtlebot3_navigation turtlebot3_navigation.launch \
-  map_file:=<path-to-the-project-map.yaml>
+roslaunch turtlebot3_navigation turtlebot3_navigation.launch
 ```
-
-Replace `<path-to-the-project-map.yaml>` with the actual path of the map used for the experimental runs.
 
 ### 3. Set the initial pose
 
