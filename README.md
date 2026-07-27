@@ -288,14 +288,3 @@ TurtleBot3_experiments_results/E0/
 ```
 
 Generated bag files must not be committed directly to the source-code branch unless they are intentionally selected for publication in the results directory.
-
-## Third-party software
-
-This branch contains source code originating from:
-
-* [ROS Navigation](https://github.com/ros-planning/navigation/tree/noetic-devel);
-* [TurtleBot3 Simulations](https://github.com/ROBOTIS-GIT/turtlebot3_simulations/tree/noetic).
-
-The original license files, package metadata, copyright notices, and source-code headers must be retained.
-
-Refer to the repository-level `LICENSE.md` and to the license information included in each upstream package for the applicable terms.
