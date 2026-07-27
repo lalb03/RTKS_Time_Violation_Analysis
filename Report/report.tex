@@ -20,7 +20,7 @@
 %%  June 03--05, 2018, Woodstock, NY}
 \acmISBN{978-1-4503-XXXX-X/2018/06}
 
-
+\usepackage{enumitem}
 
 \begin{document}
 
@@ -59,7 +59,11 @@ Timing Violation Patterns and Impacts"}
 \renewcommand{\shortauthors}{Lorenzo Albertin, Andrea Santi, Caterina Vallotto}
 
 \begin{abstract}
-  Abstract
+This report presents a small-scale experimental analysis of the paper \textit{"An Empirical Study of Performance Interference: Timing Violation Patterns and Impacts"}, which investigates how hardware-induced performance interference can propagate through Cyber-Physical Systems (CPS) and ultimately degrade physical control behaviour. Rather than reproducing the complete TimeTrap framework, we focus on experimentally evaluating selected timing-violation mechanisms and their qualitative effects in controlled virtualized environments.
+
+\noindent The study is organized into two case studies. The first investigates ArduPilot Copter-4.0 running in a Software-in-the-Loop (SITL) environment, where we compare the effects of indiscriminate resource saturation, explicit software delay injection, and a low-priority cache-contention workload after separating sensor emulation from the control thread. The second analyzes the ROS Navigation Stack for TurtleBot3 in Gazebo by injecting controlled delays at different stages of the navigation pipeline, including localization, TF publication, costmap generation, and local planning.
+
+\noindent For both case studies, we define repeatable experimental configurations, introduce custom instrumentation to collect timing and control metrics, and evaluate how timing perturbations affect temporal displacement, data freshness, control-loop execution, navigation behaviour, and mission-level performance. Our results show that explicit software delay injection consistently produces measurable temporal displacement and significant control degradation, while the selected resource-contention workloads do not reproduce the same effects under the adopted virtualized setup. Even though our experiments do not constitute a complete validation of the TimeTrap framework, they qualitatively confirm several of the timing-propagation mechanisms discussed in the original work while highlighting the limitations imposed by virtualization, simulation, and the manual selection of injection points.
 \end{abstract}
 
 
