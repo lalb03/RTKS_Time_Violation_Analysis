@@ -1,5 +1,8 @@
 # RTKS Time Violation Analysis
 
+<img width="155" align="center" alt="unipd-logo" src="https://github.com/user-attachments/assets/1e4e14cf-9d9c-4c5a-aaf7-64cb6b64a0c8" />
+
+
 *Real-Time Kernels and Systems course - University of Padua*
 
 Contributors:
